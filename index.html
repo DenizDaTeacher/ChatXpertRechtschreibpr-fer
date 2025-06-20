@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Rechtschreibprüfung im Chat</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      font-family: sans-serif;
+    }
+
+    body {
+      flex: 1 1 auto;
+    }
+
+    #main-container {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    #chat, #input, #fehlerliste {
+      padding: 20px; box-sizing: border-box; overflow-y: auto;
+    }
+    #chat {
+      width: 30%; background: #e7f3ff; border-right: 1px solid #ccc;
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    #nachrichten {
+      flex-grow: 1;
+      overflow-y: auto;
+      padding-right: 10px;
+      min-height: 0;
+    }
+    #chat-status {
+      margin-top: 10px;
+      font-weight: bold;
+      color: green;
+      min-height: 24px;
+    }
+    .chat-bubble {
+      background-color: #d0e7ff; border-radius: 15px; padding: 10px 15px;
+      margin: 10px 0; max-width: 90%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      align-self: flex-start;
+      word-break: break-word;
+    }
+    .agent-bubble {
+      background-color: #c2ffc2; 
+      margin: 5px 0 10px 30%;
+      border-radius: 15px;
+      padding: 10px 15px;
+      max-width: 90%;
+      align-self: flex-end;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      word-break: break-word;
+    }
+    #input {
+      width: 40%; background: #ffffff; border-right: 1px solid #ccc;
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    #fehlerliste {
+      width: 25%; background: #fafafa; /* kleiner als vorher */
+      font-size: 0.9em;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    textarea {
+      width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; font-size: 1em;
+      resize: vertical;
+    }
+    button {
+      padding: 10px; background: #4caf50; color: white; border: none;
+      border-radius: 5px; cursor: pointer;
+    }
+    button:hover { background: #45a049; }
+    .tooltip { 
+      position: relative; 
+      display: inline-block; 
+      margin-left: 3px; 
+      cursor: help;
+      border-bottom: 1px dotted #333;
+    }
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 280px;
+      background-color: #f9f9f9;
+      color: #333;
+      text-align: left;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 10px;
+      position: absolute;
+      z-index: 10;
+      top: 50%;
+      left: 105%;
+      transform: translateY(-50%);
+      opacity: 0;
+      transition: opacity 0.3s;
+      font-size: 0.85em;
+      box-shadow: 0 0 6px rgba(0,0,0,0.1);
+      white-space: normal;
+      word-wrap: break-word;
+    }
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
+    }
+    .korrekt-hinweis {
+      color: green;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+    .fehler-eintrag {
+      margin-bottom: 15px; padding: 8px; border-left: 4px solid red; background: #fff;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .fehler-gruppe {
+      margin-bottom: 20px;
+      border-bottom: 2px solid #ccc;
+      padding-bottom: 10px;
+    }
+    .frage-ueberschrift {
+      font-weight: bold;
+      margin-bottom: 5px;
+      font-size: 1.1em;
+      border-bottom: 1px solid #666;
+      padding-bottom: 3px;
+    }
+    #korrekturanzeige {
+      margin-top: 20px;
+      min-height: 90px;
+      word-break: break-word;
+    }
+    #musterantwort {
+      margin-top: 10px;
+      background:#e6f7ff;
+      padding: 10px;
+      border-left: 4px solid #3399ff;
+      font-style: italic;
+      white-space: pre-wrap;
+      word-break: break-word;
+      display: none; /* initial versteckt */
+    }
+    #feedback-box {
+      background: #f4f4f4;
+      border-top: 2px solid #ccc;
+      padding: 20px;
+      font-size: 1em;
+      text-align: center;
+      display: none;
+      opacity: 0;
+      transition: opacity 0.6s ease-in-out;
+      position: relative;
+      z-index: 10;
+      flex-shrink: 0;
+      box-sizing: border-box;
+      margin-top: 10px;
+    }
+    #feedback-box.show {
+      display: block;
+      opacity: 1;
+    }
+    #pdf-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 10px 0;
+    }
+    #pdf-section button, #pdf-section a {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="main-container">
+    <div id="chat">
+      <h3>Kundennachrichten</h3>
+      <div id="nachrichten"></div>
+      <div id="chat-status"></div>
+    </div>
+
+    <div id="input">
+      <h3>Deine Antwort</h3>
+      <textarea id="antwort" placeholder="Hier antworten..."></textarea>
+      <button onclick="pruefeAntwort()">Antwort prüfen</button>
+      <div id="korrekturanzeige"></div>
+      <div id="musterantwort"></div>
+      <button id="naechsteFrageBtn" style="display:none; margin-top: 10px;" onclick="naechsteFrage()"></button>
+    </div>
+
+    <div id="fehlerliste">
+      <h3>Fehlerhistorie</h3>
+      <div id="fehleranzeigen"></div>
+    </div>
+  </div>
+
+  <div id="feedback-box">
+    <div id="abschlussfeedback"></div>
+    <div id="pdf-section">
+      <p>Wenn du fertig bist, kannst du jetzt die PDF mit allen Antworten und der Fehleranalyse erstellen und im SkillHub hochladen.</p>
+      <button onclick="exportPDF()">📄 PDF erstellen</button>
+      <a href="https://skillhub.moodlecloud.com/mod/assign/view.php?id=109" target="_blank">👉 Zur Aufgabe im SkillHub</a>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  <script>
+    const kundentexte = [
+      "Hallo, ich wollte fragen, wann meine Bestellung ankommt?",
+      "Können Sie mir bitte weiterhelfen? Ich finde die Rechnung nicht.",
+      "Was kostet der Versand für Bestellungen nach Österreich?",
+      "Ich habe gestern eine falsche Ware bekommen.",
+      "Ist eine Rückgabe auch nach 30 Tagen noch möglich?"
+    ];
+
+    const musterantworten = [
+      "Vielen Dank für Deine Nachricht. Deine Bestellung ist bereits auf dem Weg und sollte in den nächsten 2–3 Werktagen bei Dir eintreffen.",
+      "Selbstverständlich helfe ich Dir weiter. Die Rechnung findest Du in Deinem Kundenkonto unter 'Bestellungen' als PDF zum Download.",
+      "Der Versand nach Österreich kostet pauschal 7,90 € pro Bestellung.",
+      "Es tut uns leid, dass Du eine falsche Lieferung erhalten hast. Bitte sende die Ware kostenfrei zurück – wir kümmern uns umgehend um den Austausch.",
+      "Auch nach Ablauf der 30 Tage prüfen wir gerne Dein Anliegen. Kontaktiere bitte unseren Kundenservice für eine individuelle Lösung."
+    ];
+
+    const fehlerTypUebersetzung = {
+      "grammar": "Grammatik",
+      "typographical": "Rechtschreibung",
+      "misspelling": "Rechtschreibung",
+      "punctuation": "Zeichensetzung",
+      "style": "Stil",
+      "non-conformance": "Formales",
+      "register": "Sprachregister",
+      "semantic": "Bedeutung",
+      "duplication": "Wiederholung",
+      "uncategorized": "Sonstiges",
+      "unknown": "Unbekannt"
+    };
+
+    let aktuellerIndex = 0;
+    let gesamtWorte = 0;
+    let gesamtFehler = 0;
+    const fehlerartenStatistik = {};
+    const fehlerProFrage = [];
+
+    const nachrichtenDiv = document.getElementById("nachrichten");
+    const fehleranzeigenDiv = document.getElementById("fehleranzeigen");
+    const feedbackDiv = document.getElementById("abschlussfeedback");
+    const feedbackBox = document.getElementById("feedback-box");
+    const korrekturanzeige = document.getElementById("korrekturanzeige");
+    const musterantwortDiv = document.getElementById("musterantwort");
+    const naechsteFrageBtn = document.getElementById("naechsteFrageBtn");
+    const chatStatus = document.getElementById("chat-status");
+
+    function ladeNachricht(index) {
+      const text = kundentexte[index];
+      const div = document.createElement("div");
+      div.className = "chat-bubble";
+      div.innerText = text;
+      nachrichtenDiv.appendChild(div);
+      chatStatus.innerText = "";
+    }
+
+    async function pruefeAntwort() {
+      const antwort = document.getElementById("antwort").value.trim();
+      if (!antwort) return;
+
+      // Antwort als Agentenbubble links hinzufügen
+      const divAntwort = document.createElement("div");
+      divAntwort.className = "agent-bubble";
+      divAntwort.innerText = antwort;
+      nachrichtenDiv.appendChild(divAntwort);
+
+      // SpracheTool API call
+      const res = await fetch("https://api.languagetoolplus.com/v2/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          text: antwort,
+          language: "de-DE"
+        })
+      });
+      const data = await res.json();
+      const matches = data.matches;
+
+      korrekturanzeige.innerHTML = "";
+      musterantwortDiv.style.display = "none"; // Musterlösung erst mal ausblenden
+      gesamtWorte += antwort.split(/\s+/).length;
+      gesamtFehler += matches.length;
+
+      // Tooltip-Hinweise anpassen mit Korrektur und Nomen-Hinweis
+      function tooltipText(match) {
+        let tipText = "";
+        if (match.rule.id === "NOUNS_LOWERCASE") {
+          tipText = "Nomen werden im Deutschen großgeschrieben.";
+        } else if (match.rule.id === "UPPERCASE_SENTENCE_START") {
+          tipText = "Am Satzanfang muss das erste Wort großgeschrieben werden.";
+        } else {
+          tipText = match.message;
+        }
+        if (match.replacements && match.replacements.length > 0) {
+          tipText += `<br>→ Richtig wäre: <strong>${escapeHtml(match.replacements[0].value)}</strong>`;
+        }
+        return tipText;
+      }
+
+      if (matches.length === 0) {
+        korrekturanzeige.innerHTML = `<div class="korrekt-hinweis">✅ Alles korrekt!</div>`;
+      } else {
+        // Fehlerdetails anzeigen mit Tooltip direkt neben Fehlerwort
+        let originalText = antwort;
+        let lastIndex = 0;
+        let enhancedText = "";
+
+        matches.forEach((match) => {
+          const start = match.context.offset;
+          const length = match.context.length;
+          const fehlerText = originalText.substr(start, length);
+          const typEng = match.rule.issueType || "unknown";
+          const typ = fehlerTypUebersetzung[typEng] || "Unbekannt";
+          fehlerartenStatistik[typ] = (fehlerartenStatistik[typ] || 0) + 1;
+
+          // Text vor Fehler
+          enhancedText += escapeHtml(originalText.substring(lastIndex, start));
+          // Fehlerwort mit Tooltip inkl. korrekter Schreibweise
+          const tipText = tooltipText(match);
+          enhancedText += `<span class="tooltip">${escapeHtml(fehlerText)}<span class="tooltiptext">${tipText}</span></span>`;
+
+          lastIndex = start + length;
+        });
+        // Text nach letztem Fehler
+        enhancedText += escapeHtml(originalText.substring(lastIndex));
+
+        korrekturanzeige.innerHTML = `<strong>Fehler (${matches.length}):</strong><br><p>${enhancedText}</p>`;
+      }
+
+      // Musterlösung in Du-Form anzeigen *nur wenn Fehler vorhanden sind*
+      if(matches.length > 0){
+        musterantwortDiv.innerText = musterantworten[aktuellerIndex] || "";
+        musterantwortDiv.style.display = "block";
+      } else {
+        musterantwortDiv.style.display = "none";
+      }
+
+      // Fehler für diese Frage speichern (HTML String inkl. Musterlösung)
+      fehlerProFrage[aktuellerIndex] = `
+        <div><strong>Antwort:</strong> ${escapeHtml(document.getElementById("antwort").value.trim())}</div>
+        <div>${korrekturanzeige.innerHTML}</div>
+        <div style="margin-top:10px; font-style: italic; background:#e6f7ff; padding:8px; border-left:4px solid #3399ff;">
+          <strong>Musterantwort:</strong><br>${escapeHtml(musterantworten[aktuellerIndex] || "")}
+        </div>`;
+
+      document.getElementById("antwort").disabled = true;
+      naechsteFrageBtn.style.display = "block";
+      naechsteFrageBtn.innerText = `Nächste Kundenfrage (${aktuellerIndex + 1} / ${kundentexte.length})`;
+    }
+
+    function naechsteFrage() {
+      // Fehlerhistorie rechts updaten
+      fehleranzeigenDiv.innerHTML = "";
+      for (let i = 0; i <= aktuellerIndex; i++) {
+        const gruppe = document.createElement("div");
+        gruppe.className = "fehler-gruppe";
+
+        const titel = document.createElement("div");
+        titel.className = "frage-ueberschrift";
+        titel.innerText = `Frage ${i + 1}`;
+        gruppe.appendChild(titel);
+
+        const inhalt = document.createElement("div");
+        inhalt.innerHTML = fehlerProFrage[i] || "Keine Fehleranalyse verfügbar.";
+        gruppe.appendChild(inhalt);
+
+        fehleranzeigenDiv.appendChild(gruppe);
+      }
+
+      // Musterlösung ausblenden beim Wechsel zur nächsten Frage
+      musterantwortDiv.style.display = "none";
+      musterantwortDiv.innerHTML = "";
+
+      aktuellerIndex++;
+
+      // Prüfen, ob alle Fragen durch sind
+      if (aktuellerIndex >= kundentexte.length) {
+        chatStatus.innerText = "✅ Alle Fragen wurden beantwortet.";
+        naechsteFrageBtn.style.display = "none";
+        document.getElementById("antwort").style.display = "none";
+        document.querySelector("#input button").style.display = "none";
+        zeigeFeedbackEnde();
+        return;
+      }
+
+      // Neue Frage links laden
+      ladeNachricht(aktuellerIndex);
+
+      // Textarea wieder aktivieren und leeren
+      const antwortFeld = document.getElementById("antwort");
+      antwortFeld.disabled = false;
+      antwortFeld.value = "";
+
+      // Korrekturbereich leeren
+      korrekturanzeige.innerHTML = "";
+
+      // Button verstecken bis neue Antwort geprüft wurde
+      naechsteFrageBtn.style.display = "none";
+    }
+
+    function zeigeFeedbackEnde() {
+      feedbackBox.classList.add("show");
+      feedbackBox.scrollIntoView({behavior: "smooth", block: "center"});
+
+      let haeufigsteArt = Object.entries(fehlerartenStatistik).sort((a,b) => b[1] - a[1])[0];
+      let feedback = `<p><strong>Abschlussanalyse:</strong></p>`;
+      feedback += `<p>Du hast insgesamt <strong>${gesamtWorte}</strong> Wörter geschrieben.</p>`;
+      feedback += `<p>Davon waren <strong>${gesamtFehler}</strong> fehlerhaft.</p>`;
+      if (haeufigsteArt) {
+        feedback += `<p>Die häufigste Fehlerart war: <strong>${haeufigsteArt[0]}</strong>.</p>`;
+      }
+      if (gesamtFehler > 5) {
+        feedback += `<p style='color:red;'>Bitte achte besonders auf Rechtschreibung und Groß-/Kleinschreibung. Nutze die Musterantworten als Orientierung.</p>`;
+      } else {
+        feedback += `<p style='color:green;'>Sehr gut! Deine Antworten waren größtenteils korrekt.</p>`;
+      }
+      feedbackDiv.innerHTML = feedback;
+    }
+
+    function exportPDF() {
+      // WICHTIG: Für sauberen PDF-Export über mehrere Seiten Höhe anpassen
+      const element = document.body;
+      const origHeight = element.style.height;
+      const origOverflow = element.style.overflow;
+
+      element.style.height = 'auto';
+      element.style.overflow = 'visible';
+
+      const opt = {
+        margin: 10,
+        filename: 'fehleranalyse-chat.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 3, scrollY: 0, useCORS: true,
+          windowWidth: document.documentElement.scrollWidth,
+          windowHeight: document.documentElement.scrollHeight
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      };
+
+      html2pdf().set(opt).from(element).save().then(() => {
+        element.style.height = origHeight;
+        element.style.overflow = origOverflow;
+      });
+    }
+
+    // Hilfsfunktion zum Escapen von HTML (für Tooltip und Fehleranzeige)
+    function escapeHtml(text) {
+      return text.replace(/[&<>"']/g, function(m) {
+        switch(m) {
+          case '&': return '&amp;';
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '"': return '&quot;';
+          case "'": return '&#39;';
+          default: return m;
+        }
+      });
+    }
+
+    // Seite laden mit erster Frage
+    window.onload = () => {
+      ladeNachricht(0);
+    };
+  </script>
+</body>
+</html>
